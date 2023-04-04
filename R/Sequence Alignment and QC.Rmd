@@ -1,0 +1,345 @@
+---
+title: "Project - Read Alignment and QC"
+author: "Alexander Ham"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## STAR Alignment
+
+I aligned each pair of paired-end reads to the indexed GRCmm39 reference genome, and directed the output to separate directories.
+```{}
+#!/bin/bash -l
+
+#SBATCH --partition=angsd_class
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --job-name=align_reads
+#SBATCH --time=02:00:00
+#SBATCH --mem=36G
+
+mamba activate angsd
+
+pair1="None"
+pair2="None"
+for file in *.fastq.gz; do
+        if [[ ${pair1} == "None" ]]; then
+                pair1=${file}
+        else
+                pair2=${file}
+                dir_name=$(cut -d "_" -f 1-3 <<< ${pair1})
+                mkdir ${dir_name}
+
+                STAR --runMode alignReads \
+                --runThreadN 8 \
+                --genomeDir GRCm39_STARindex \
+                --readFilesIn ${pair1} ${pair2} \
+                --readFilesCommand zcat \
+                --outFileNamePrefix ./${dir_name}/${dir_name} \
+                --outSAMtype BAM SortedByCoordinate \
+
+                pair1="None"
+                pair2="None"
+        fi;
+done
+exit
+
+```
+
+## Alignment MultiQC
+
+I checked each alignment using MultiQC.  
+```{}
+#!/bin/bash -l
+
+#SBATCH --partition=angsd_class
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --job-name=run_multiqc
+#SBATCH --time=02:00:00
+#SBATCH --mem=8G
+
+mamba activate multiqc
+
+for dir in ERR*/; do
+        filename=$(cut -d "_" -f 3 <<< ${dir})
+        multiqc --outdir ./multiqc_reports --filename "${filename}_multiqc" ./${dir};
+done
+
+exit
+```
+
+LFD1 is an outlier in terms of unmapped reads. While other replicates still have a large number of unmapped reads, 45 - 65% of their reads are uniquely mapped. LFD1 only has 25% uniquely mapped reads. It may be a good idea to exclude this replicate to avoid bias from the small proportion of uniquely mapped reads.
+
+![](C:/Users/hamal/OneDrive/Documents/ANGSD/Project/Project_Files/multiqc_reports/LFD1/LFD1_alignment_plot.jpeg)
+
+## FastQC
+
+I also ran FastQC on each fastq file. Checking the over-represented sequences for each sample, it seems that each sample has varying degrees of bacterial contamination. Doing a BLAST search on the top over-represented sequence in each sample either results in bacterial DNA or Mouse Ins2 gene. This is true for both LFD and HFD samples. Apart from over-represented sequences, the fastq files passed FastQC tests.
+```{}
+#!/bin/bash -l
+
+#SBATCH --partition=angsd_class
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --job-name=run_fastqc
+#SBATCH --time=02:00:00
+#SBATCH --mem=8G
+
+mamba activate angsd
+
+for file in *.fastq.gz; do
+        fastqc ${file} -o fastqc_reports/;
+done
+
+exit
+```
+
+## RSeQC Read Distribution
+
+I analyzed Read Distribution using RSeQC
+```{}
+#!/bin/bash -l
+
+#SBATCH --partition=angsd_class
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --job-name=run_rseqc
+#SBATCH --time=02:00:00
+#SBATCH --mem=8G
+
+mamba activate rseqc
+
+for dir in ERR*/; do
+        filename=$(find ${dir} -maxdepth 1 -name "*.bam" -print -quit | xargs basename);
+        path=${dir}${filename};
+        read_distribution.py -i ${path} -r GRCm39.bed;
+done
+
+exit
+
+```
+
+I saved the output tables from each .bam file as separate .txt files. I loaded each of them into R and accumulated all of their values into one table
+```{r, include=FALSE}
+library(magrittr)
+```
+
+```{r, warning=FALSE}
+setwd('C:/Users/hamal/OneDrive/Documents/ANGSD/Project/Project_Files/rseqc_reports/read_dist')
+read.dist <- read.table("1.txt", header = TRUE)
+for (i in seq(2,8)){
+  #load next table
+  read.dist.temp <- read.table(paste0(i, ".txt"), header = TRUE)
+  #add tag_count
+  read.dist[, 3] <- read.dist[, 3] + read.dist.temp[, 3]
+  #get average of tags/kb
+  read.dist[, 4] <- (read.dist[, 4] + read.dist.temp[, 4]) / 2
+}
+read.dist
+```
+
+```{r, include=FALSE}
+library(tidyverse)
+```
+
+```{r}
+dist.plot <- ggplot(data = read.dist, aes(x=Group, y=Tags.Kb,fill=Group))+
+  geom_col() + theme(axis.text.x=element_blank()) + ggtitle("RSeQC: Tag Locations")
+
+dist.plot
+```
+
+Next I analyzed gene body distributions. I created a subset of my genome-wide .bed file to represent only chromosomes 1-4 so the function would take less time.
+```{}
+#!/bin/bash -l
+
+#SBATCH --partition=angsd_class
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --job-name=run_rseqc
+#SBATCH --time=08:00:00
+#SBATCH --mem=8G
+
+mamba activate rseqc
+
+geneBody_coverage.py -i bampaths.txt -r GRCm39_chr1-4.bed -o rseqc_qc/group;
+
+exit
+```
+
+The gene body distribution curves show that as a whole, the LFD samples have a greater 3' bias than HFD samples. HFD2 and HFD3 clearly have the least 3' bias and LFD1 and LFD2 have the greatest 3' bias. It is possible that the LFD samples have more degraded mRNA, which could potentially be a source of bias.  
+
+![](C:/Users/hamal/OneDrive/Documents/ANGSD/Project/Project_Files/rseqc_reports/group.geneBodyCoverage.curves.jpg)
+
+## featureCounts QC
+
+I ran featureCounts on all alignments excluding LFD1, since it presented significantly more contamination than other samples in the MultiQC report.
+```{}
+#!/bin/bash -l
+
+#SBATCH --partition=angsd_class
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --job-name=run_featurecounts
+#SBATCH --time=02:00:00
+#SBATCH --mem=8G
+
+mamba activate angsd
+
+path_array=()
+
+for dir in ERR*/; do
+        filename=$(find ${dir} -maxdepth 1 -name "*.bam" -print -quit | xargs basename);
+        path=${dir}${filename};
+        if [[ "${dir}" != "ERR3094492_Beta_LFD1/" ]]; then
+                path_array+=($path);
+        fi;
+done
+
+featureCounts -a GRCm39.gtf \
+-o project_featureCounts.txt \
+-t exon \
+-g gene_id \
+-p \
+--countReadPairs \
+-O \
+-T 4 \
+${path_array[@]};
+
+exit
+```
+
+```{r, include=FALSE}
+library(tidyr)
+```
+
+First I examined the featureCounts summary output.
+```{r}
+#load in featureCounts summary table
+rc.summary <- read.table("C:/Users/hamal/OneDrive/Documents/ANGSD/Project/Project_Files/project_featureCounts.txt.summary", header = TRUE)
+
+#rename samples to condition + replicate # (eg HFD1)
+colnames(rc.summary) <- sapply(colnames(rc.summary), function(x) gsub(".*(LFD|HFD)([0-9]+).*", "\\1\\2", x))
+
+#order columns alphabetically
+rc.summary <- rc.summary[, c(1, order(names(rc.summary)[-1]) + 1)]
+```
+
+```{r}
+#delete rows with 0 values in each dataframe
+rc.summary <- rc.summary[rc.summary$HFD1 != 0, ]
+
+#change dataframes to long format
+rc.summary <- rc.summary %>%
+  pivot_longer(cols = names(rc.summary)[-1], names_to = "Sample", values_to = "Reads")
+
+```
+
+While there is a similarly low amount of unassigned multimapping or featureless reads across samples, HFD samples do show a greater number of assigned reads as a whole. The difference does not appear major enough to be a cause for concern. Count normalization should ideally account for this.
+```{r}
+plot.rc.summary <- ggplot(rc.summary, aes(x = Sample, y = Reads, fill = Status)) + geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Sample", y = "Reads", fill = "Status") +
+  theme_classic() + coord_flip() + ggtitle("Mapping Status for Read Counts")
+
+plot.rc.summary
+
+```
+
+Next I examined the featureCounts data
+```{r}
+rc.data <- read.table("C:/Users/hamal/OneDrive/Documents/ANGSD/Project/Project_Files/project_featureCounts.txt", header = TRUE)
+
+names(rc.data)[7:13] <- sapply(names(rc.data[7:13]), function(x) gsub(".*(LFD|HFD)([0-9]).*", "\\1\\2", x))
+```
+
+```{r, include=FALSE}
+library(DESeq2)
+```
+
+Converted the featureCounts data into a DESeq object
+```{r}
+#make Geneids into row names
+row.names(rc.data) <- make.names(rc.data$Geneid)
+
+#exclude columns without read counts
+rc.data <- rc.data[ , -c(1:6)]
+
+#create colData dataframe
+sample_info <- data.frame(condition = gsub("[0-9]", "", names(rc.data)), 
+                          row.names = names(rc.data))
+
+#create DESeq object
+deseq.ds <- DESeqDataSetFromMatrix(countData = as.matrix(rc.data),
+                                   colData = sample_info,
+                                   design = ~ condition)
+```
+
+```{r}
+#remove genes with no reads
+keep_genes <- rowSums(counts(deseq.ds)) > 0
+deseq.ds <- deseq.ds[keep_genes, ]
+
+#put samples in alphabetical order
+deseq.ds <- deseq.ds[,sort(colnames(deseq.ds))]
+```
+
+```{r}
+#calculate size factors
+deseq.ds <- estimateSizeFactors(deseq.ds)
+
+#view effect of size factor normalization on counts
+boxplot(log2(counts(deseq.ds) +1), notch=TRUE,
+        main = "Non-normalized read counts",
+        ylab = "log2(read counts)", cex = 0.6)
+boxplot(log2(counts(deseq.ds, normalized = TRUE) + 1), notch=TRUE,
+        main = "Normalized read counts",
+        ylab = "log2(read counts)", cex = 0.6)
+
+```
+
+
+As a sanity check, I plotted the normalized count of Ins2 and Gcg. Since all samples are beta cells, Ins2 should show much higher counts than Gcg across all samples. The plots show this is the case.
+```{r}
+plotCounts(deseq.ds, 'Ins2')
+plotCounts(deseq.ds, 'Gcg')
+```
+
+Next I examined sample clustering.
+
+```{r}
+#apply rlog normalization
+dds.rlg <- rlog(deseq.ds, blind=FALSE) 
+```
+
+```{r, include=FALSE}
+library(RColorBrewer)
+library(pheatmap)
+```
+
+The clustering heatmap shows that samples from each condition cluster together, confirming that the different conditions are associated with different transcriptional profiles. 
+
+It is interesting to observe that there appear to be pairs of similar samples within each condition, potentially indicating small batch effects. Similar pairs of HFD samples were observed from RSeQC gene body distribution plots.  
+```{r}
+#get sample-sample distances
+sampleDists <- dist(t(assay(dds.rlg)))
+
+#construct heatmap of sample-sample distances
+sampleDistMatrix <- as.matrix(sampleDists)
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+```
+
+PCA also shows that the conditions form seperate clusters, with pairs within each condition. 
+```{r}
+plotPCA(dds.rlg, intgroup=c("condition"))
+```

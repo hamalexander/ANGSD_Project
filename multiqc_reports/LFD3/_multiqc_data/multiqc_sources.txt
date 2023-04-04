@@ -1,0 +1,2 @@
+Module	Section	Sample Name	Source
+STAR	SummaryLog	ERR3094496_Beta_LFD3	/athena/angsd/scratch/aph4003/seqfiles/ERR3094496_Beta_LFD3/ERR3094496_Beta_LFD3Log.final.out

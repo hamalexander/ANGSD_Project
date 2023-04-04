@@ -1,0 +1,2 @@
+Module	Section	Sample Name	Source
+STAR	SummaryLog	ERR3094493_Beta_HFD1	/athena/angsd/scratch/aph4003/seqfiles/ERR3094493_Beta_HFD1/ERR3094493_Beta_HFD1Log.final.out

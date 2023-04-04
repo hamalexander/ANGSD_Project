@@ -1,0 +1,2 @@
+Module	Section	Sample Name	Source
+STAR	SummaryLog	ERR3094498_Beta_HFD4	/athena/angsd/scratch/aph4003/seqfiles/ERR3094498_Beta_HFD4/ERR3094498_Beta_HFD4Log.final.out

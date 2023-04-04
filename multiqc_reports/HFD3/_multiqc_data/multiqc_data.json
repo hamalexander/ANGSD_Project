@@ -1,0 +1,196 @@
+{
+    "report_data_sources": {
+        "STAR": {
+            "SummaryLog": {
+                "ERR3094497_Beta_HFD3": "/athena/angsd/scratch/aph4003/seqfiles/ERR3094497_Beta_HFD3/ERR3094497_Beta_HFD3Log.final.out"
+            }
+        }
+    },
+    "report_general_stats_data": [
+        {
+            "ERR3094497_Beta_HFD3": {
+                "total_reads": 16873548.0,
+                "avg_input_read_length": 98.0,
+                "uniquely_mapped": 11138513.0,
+                "uniquely_mapped_percent": 66.01,
+                "avg_mapped_read_length": 97.49,
+                "num_splices": 4225364.0,
+                "num_annotated_splices": 4208628.0,
+                "num_GTAG_splices": 4201262.0,
+                "num_GCAG_splices": 17160.0,
+                "num_ATAC_splices": 2190.0,
+                "num_noncanonical_splices": 4752.0,
+                "mismatch_rate": 0.25,
+                "deletion_rate": 0.0,
+                "deletion_length": 1.84,
+                "insertion_rate": 0.0,
+                "insertion_length": 1.32,
+                "multimapped": 653299.0,
+                "multimapped_percent": 3.87,
+                "multimapped_toomany": 23172.0,
+                "multimapped_toomany_percent": 0.14,
+                "unmapped_mismatches_percent": 0.0,
+                "unmapped_tooshort_percent": 29.92,
+                "unmapped_other_percent": 0.06,
+                "unmapped_mismatches": 0,
+                "unmapped_tooshort": 5048440,
+                "unmapped_other": 10124
+            }
+        }
+    ],
+    "report_general_stats_headers": [
+        {
+            "uniquely_mapped_percent": {
+                "title": "% Aligned",
+                "description": "% Uniquely mapped reads",
+                "max": 100,
+                "min": 0,
+                "suffix": "%",
+                "scale": "YlGn",
+                "namespace": "STAR",
+                "rid": "mqc-generalstats-star-uniquely_mapped_percent",
+                "format": "{:,.1f}",
+                "colour": "55,126,184",
+                "hidden": null,
+                "ceiling": null,
+                "floor": null,
+                "minRange": null,
+                "shared_key": null,
+                "modify": null,
+                "placement": 1000.0,
+                "dmax": 100.0,
+                "dmin": 0.0
+            },
+            "uniquely_mapped": {
+                "title": "M Aligned",
+                "description": "Uniquely mapped reads (millions)",
+                "min": 0,
+                "scale": "PuRd",
+                "modify": 1e-06,
+                "shared_key": "read_count",
+                "namespace": "STAR",
+                "rid": "mqc-generalstats-star-uniquely_mapped",
+                "format": "{:,.1f}",
+                "colour": "55,126,184",
+                "hidden": null,
+                "max": null,
+                "ceiling": null,
+                "floor": null,
+                "minRange": null,
+                "placement": 1000.0,
+                "dmax": 11.138513,
+                "dmin": 0.0
+            }
+        }
+    ],
+    "report_multiqc_command": "/athena/angsd/scratch/mef3005/share/envs/multiqc/bin/multiqc --outdir ./multiqc_reports --filename HFD3/_multiqc ./ERR3094497_Beta_HFD3/",
+    "report_plot_data": {
+        "star_alignment_plot": {
+            "plot_type": "bar_graph",
+            "samples": [
+                [
+                    "ERR3094497_Beta_HFD3"
+                ]
+            ],
+            "datasets": [
+                [
+                    {
+                        "name": "Uniquely mapped",
+                        "data": [
+                            11138513.0
+                        ],
+                        "color": "#437bb1"
+                    },
+                    {
+                        "name": "Mapped to multiple loci",
+                        "data": [
+                            653299.0
+                        ],
+                        "color": "#7cb5ec"
+                    },
+                    {
+                        "name": "Mapped to too many loci",
+                        "data": [
+                            23172.0
+                        ],
+                        "color": "#f7a35c"
+                    },
+                    {
+                        "name": "Unmapped: too short",
+                        "data": [
+                            5048440.0
+                        ],
+                        "color": "#b1084c"
+                    },
+                    {
+                        "name": "Unmapped: other",
+                        "data": [
+                            10124.0
+                        ],
+                        "color": "#7f0000"
+                    }
+                ]
+            ],
+            "config": {
+                "id": "star_alignment_plot",
+                "title": "STAR: Alignment Scores",
+                "ylab": "# Reads",
+                "cpswitch_counts_label": "Number of Reads"
+            }
+        }
+    },
+    "report_saved_raw_data": {
+        "multiqc_star": {
+            "ERR3094497_Beta_HFD3": {
+                "total_reads": 16873548.0,
+                "avg_input_read_length": 98.0,
+                "uniquely_mapped": 11138513.0,
+                "uniquely_mapped_percent": 66.01,
+                "avg_mapped_read_length": 97.49,
+                "num_splices": 4225364.0,
+                "num_annotated_splices": 4208628.0,
+                "num_GTAG_splices": 4201262.0,
+                "num_GCAG_splices": 17160.0,
+                "num_ATAC_splices": 2190.0,
+                "num_noncanonical_splices": 4752.0,
+                "mismatch_rate": 0.25,
+                "deletion_rate": 0.0,
+                "deletion_length": 1.84,
+                "insertion_rate": 0.0,
+                "insertion_length": 1.32,
+                "multimapped": 653299.0,
+                "multimapped_percent": 3.87,
+                "multimapped_toomany": 23172.0,
+                "multimapped_toomany_percent": 0.14,
+                "unmapped_mismatches_percent": 0.0,
+                "unmapped_tooshort_percent": 29.92,
+                "unmapped_other_percent": 0.06,
+                "unmapped_mismatches": 0,
+                "unmapped_tooshort": 5048440,
+                "unmapped_other": 10124
+            }
+        },
+        "multiqc_general_stats": {
+            "ERR3094497_Beta_HFD3": {
+                "STAR_mqc-generalstats-star-uniquely_mapped_percent": 66.01,
+                "STAR_mqc-generalstats-star-uniquely_mapped": 11138513.0
+            }
+        }
+    },
+    "config_analysis_dir_abs": [
+        "/athena/angsd/scratch/aph4003/seqfiles/ERR3094497_Beta_HFD3"
+    ],
+    "config_analysis_dir": [
+        "./ERR3094497_Beta_HFD3/"
+    ],
+    "config_creation_date": "2023-04-01, 23:31 EDT",
+    "config_git_hash": null,
+    "config_intro_text": null,
+    "config_report_comment": null,
+    "config_report_header_info": null,
+    "config_script_path": "/athena/angsd/scratch/mef3005/share/envs/multiqc/lib/python3.10/site-packages/multiqc/utils",
+    "config_short_version": "1.14",
+    "config_subtitle": null,
+    "config_title": null,
+    "config_version": "1.14"
+}

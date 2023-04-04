@@ -1,0 +1,2 @@
+Sample	STAR_mqc-generalstats-star-uniquely_mapped_percent	STAR_mqc-generalstats-star-uniquely_mapped
+ERR3094495_Beta_HFD2	60.77	11182134.0

@@ -1,0 +1,2 @@
+Module	Section	Sample Name	Source
+STAR	SummaryLog	ERR3094499_Beta_LFD4	/athena/angsd/scratch/aph4003/seqfiles/ERR3094499_Beta_LFD4/ERR3094499_Beta_LFD4Log.final.out

@@ -1,0 +1,15 @@
+Status	ERR3094493_Beta_HFD1/ERR3094493_Beta_HFD1Aligned.sortedByCoord.out.bam	ERR3094494_Beta_LFD2/ERR3094494_Beta_LFD2Aligned.sortedByCoord.out.bam	ERR3094495_Beta_HFD2/ERR3094495_Beta_HFD2Aligned.sortedByCoord.out.bam	ERR3094496_Beta_LFD3/ERR3094496_Beta_LFD3Aligned.sortedByCoord.out.bam	ERR3094497_Beta_HFD3/ERR3094497_Beta_HFD3Aligned.sortedByCoord.out.bam	ERR3094498_Beta_HFD4/ERR3094498_Beta_HFD4Aligned.sortedByCoord.out.bam	ERR3094499_Beta_LFD4/ERR3094499_Beta_LFD4Aligned.sortedByCoord.out.bam
+Assigned	9910326	6376367	10358412	7694039	10543850	9473853	8247806
+Unassigned_Unmapped	0	0	0	0	0	0	0
+Unassigned_Read_Type	0	0	0	0	0	0	0
+Unassigned_Singleton	0	0	0	0	0	0	0
+Unassigned_MappingQuality	0	0	0	0	0	0	0
+Unassigned_Chimera	0	0	0	0	0	0	0
+Unassigned_FragmentLength	0	0	0	0	0	0	0
+Unassigned_Duplicate	0	0	0	0	0	0	0
+Unassigned_MultiMapping	1812879	1727992	1789666	1735038	1724524	1869090	1837021
+Unassigned_Secondary	0	0	0	0	0	0	0
+Unassigned_NonSplit	0	0	0	0	0	0	0
+Unassigned_NoFeatures	739404	646390	823722	636139	594663	568574	679331
+Unassigned_Overlapping_Length	0	0	0	0	0	0	0
+Unassigned_Ambiguity	0	0	0	0	0	0	0
