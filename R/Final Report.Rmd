@@ -1,0 +1,239 @@
+---
+title: "Final Report"
+author: "Alexander Ham"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r, include = FALSE}
+library(DESeq2)
+library(magrittr)
+library(goseq)
+library(EnhancedVolcano)
+library(org.Mm.eg.db)
+library(rrvgo)
+library(pheatmap)
+```
+
+## Introduction
+Type 2 diabetes is characterized by chronic hyperglycemia due to the reduced ability of beta-cells in the pancreatic islets to produce insulin. This declining function of beta-cells occurs over a patient's lifetime, and is often associated with insulin resistance that results from prolonged periods of hyperglycemia [1]. This insulin resistance combined with hyperglycemia places greater demand on beta-cells to produce insulin. There are multiple theories on how these factors contribute to the beta-cell dysfunction seen in Type 2 diabetes. These conditions may negatively affect beta-cell proliferation and cell mass [2]. The increased demand for insulin production may create major ER stress and oxidative stress in beta cells, negatively affecting the insulin secretion pathway [2]. Interestingly, these circumstances could decrease the expression of transcription factors critical for maintaining beta-cell identity, leading to dedifferentiation into progenitor-like cell states [2]. Much work has been done to support each of these theories, and each probably play a role in the T2D disease phenotype. 
+
+I focused my analysis on examining the loss of beta-cell identity in hyperglycemic mice. In mammals, beta-cell differentiation is a complicated process involving many intermediate progenitors [3]. During the tertiary transition in pancreatic development, Ngn3+ endocrine progenitor cells undergo different differentiation pathway to become Pax4+/MafA+/Pdx1+ beta-cells, Arx+ alpha-cells, and numerous other cell types [3]. Dedifferentiation involves beta-cells losing expression of their unique markers, and gaining expression of the endocrine progenitor cell markers [2]. Furthermore, transdifferentiation can occur when these dedifferentiated beta-cells gain expression of markers for alpha-cell identity [2]. I hyopthesize that beta-cells under prolonged hyperglycemic conditions show reduced expression of beta-cell specific markers. To test this, I examined RNA-Seq data of beta-cells from high-fat diet (HFD) induced hyperglycemic mice and low-fat diet (LFD) control mice in the 2019 study "High-fat diet impacts more changes in beta-cell compared to alpha-cell transcriptome" [4].
+
+## Results
+
+Imported my formatted, size-factor normalized DESeq2 object representing the counts data. For information on how this was generated and formatted, see "FeatureCounts Changes.rmd".
+```{r}
+setwd("C:/Users/hamal/OneDrive/Documents/ANGSD/Project/Project_Files/R")
+deseq.ds <- readRDS("deseq.ds.rds")
+#relevel DESeq2 object so that LFD is base condition
+deseq.ds$condition %<>% relevel(ref="LFD")
+```
+The principal component shows that replicates for the LFD and HFD conditions cluster by condition. This indicates that there are consistent transcriptional differences between each condition. It may be worth noting that replicate LFD3 shows differences along PC2 despite clustering with other LFD replicates.
+```{r}
+#apply rlog normalization
+dds.rlg <- rlog(deseq.ds, blind=FALSE)
+
+#plot PCA of rlog counts data
+pca <- plotPCA(dds.rlg, intgroup=c("condition"))
+pca + geom_text(aes(label = name), nudge_y = 0.8) + geom_point(size = 3)
+```
+
+The volcano plot demonstrates that there is a fairly even distribution of differentially expressed genes associated with each condition. 
+```{r, fig.height=8}
+#calculate dispersion estimates
+deseq.ds %<>% estimateDispersions()
+#calculate Wald statistics
+deseq.ds %<>% nbinomWaldTest()
+#generate differential expression results
+dge.results <- results(deseq.ds, independentFiltering = TRUE, alpha = 0.05)
+#volcano plot
+EnhancedVolcano(dge.results, lab=rownames(dge.results), x='log2FoldChange', y='padj',
+                pCutoff=0.05, title="LFD vs HFD Gene Expression", ylim = c(0,40))
+```
+  
+  
+The Revigo tree map shows groups of similar Biological Process Gene Ontologies. I am interested in examining the biological pathways that differ between conditions to examine how hyperglycemia is altering the internal processes of beta-cells. Protein Localization is the largest represented group, which likely relates to insulin processing and secretion. GO groups for Response to Endoplasmic Reticulum Stress and Response to Topologically Incorrect Protein may relate to cellular stress in response to hyperglycemia and increased insulin demand. Inspecting this GO data provides interesting insights, but cannot be used to rigorously test differences in cell state. Next, I will test whether specific markers are differentially expressed in each condition.  
+```{r, results='hide', message=FALSE, warning=FALSE}
+#create vector of DE genes
+dge.genes <- rownames(subset(dge.results, padj < 0.05))
+
+#construct named vector of 0 (not DE) and 1 (DE)
+gene.vector <- row.names(dge.results) %in% dge.genes %>% as.integer
+names(gene.vector) <- row.names(dge.results)
+
+#convert DEG vector from gene symbols to Entrez Ids
+names(gene.vector) <- mapIds(org.Mm.eg.db, keys=names(gene.vector), keytype="SYMBOL", column="ENTREZID")
+
+#remove values with missing names
+gene.vector <- gene.vector[!is.na(names(gene.vector))]
+
+#calculate probability weighting function for use in GO analysis
+pwf <- nullp(gene.vector, "mm39", "refGene", plot.fit = FALSE)
+
+#generate GO term enrichment
+go.results <- goseq(pwf, "mm39", "refGene")
+
+#subset results to Biological Process GO terms with a over-represented p-value < 0.001
+sig.GOs.BP <- subset(go.results, over_represented_pvalue < 0.001 & ontology == "BP")
+
+sig.BP.list <- sig.GOs.BP[,1]
+sig.BP.scores <- setNames(-log10(sig.GOs.BP$over_represented_pvalue), sig.BP.list)
+
+#generate similarity matrix for GO terms
+simMatrix <- calculateSimMatrix(sig.BP.list, orgdb = "org.Mm.eg.db", ont = "BP", method="Rel")
+
+#reduce terms based on similarity
+reducedTerms <- reduceSimMatrix(simMatrix, sig.BP.scores, threshold=0.7, orgdb="org.Mm.eg.db")
+```
+
+```{r}
+#REVIGO treemap plot of reduced terms
+treemapPlot(reducedTerms)
+```
+
+First I inspect insulin expression in each condition via the Ins2 gene and its retrogene Ins1. While the expression of both is lower under HFD conditions, neither difference is statistically significant. This might indicate that these HFD beta-cells are somewhat dysregulated, but not completely dysfunctional.
+```{r}
+plotCounts(deseq.ds, "Ins2")
+Ins2_results <- dge.results["Ins2",]
+plotCounts(deseq.ds, "Ins1")
+Ins1_results <- dge.results["Ins1",]
+print(rbind(as.data.frame(Ins2_results), as.data.frame(Ins1_results)))
+```
+
+I examined the differential expression of transcription factors associated with beta-cell identity [2]. These results test the hypothesis that HFD beta-cells lose expression of beta-cell identity markers. Only Nkx6.1 and MafA show statistically significant differences in expression, where MafA is downregulated and Nkx6.1 is upregulated in HFD mice. Each of these transcription factors show negative fold-change in HFD samples, with Nkx6.1 as the exception. It is surprising to find the Nkx6.1 significantly upregulated in HFD samples, since it is a crucial regulator of beta-cell identity and function. Overall, these results do not confirm the hypothesis. 
+```{r}
+beta.identity.genes <- c("Pdx1", "Mafa", "Neurod1", "Nkx6.1", "Foxo1", "Pax6", "Nkx2.2")
+
+#rlog normalize the counts data
+deseq.counts <- counts(deseq.ds)
+deseq.counts.rlg <- rlog(deseq.counts, blind=FALSE)
+
+#get rlog normalized counts data for beta-cell identity genes
+beta.identity.rlg <- deseq.counts.rlg[beta.identity.genes,]
+
+#create heatmap
+pheatmap(beta.identity.rlg, scale = "row", main = "Beta-cell Identity Markers", cluster_cols = FALSE)
+
+#DESeq results of beta-cell identity genes
+results.beta.identity <- subset(dge.results, rownames(dge.results) %in% beta.identity.genes) %>%   as.data.frame()
+results.beta.identity
+```
+
+Next, I tested differential expression of transcription factors associated with pancreatic progenitor cell identity [3]. The results indicate no significant difference in expression of these transcription factors. Since this sequencing data is derived from FACS-sorted Ins+ cells, cells expressing these transcription factors must also co-express insulin. This means that fully dedifferentiated cells cannot be identified from this data, but perhaps cells undergoing the transition can. A lineage-tracing model would be needed to more accurately quantify dedifferentiated cells.  
+```{r}
+prog.identity.genes <- c("Isl1", "Rfx6", "Gata6")
+
+#get rlog normalized counts data for progenitor identity genes
+prog.identity.rlg <- deseq.counts.rlg[prog.identity.genes,]
+
+#create heatmap
+pheatmap(prog.identity.rlg, scale = "row", main = "Endocrine Progenitor Identity Markers", cluster_cols = FALSE)
+
+#DESeq results of progenitor identity genes
+results.prog.identity <- subset(dge.results, rownames(dge.results) %in% prog.identity.genes) %>% as.data.frame()
+results.prog.identity
+```
+
+## Methods
+The sequencing data used in this analysis is from the 2019 publication
+**High-fat diet impacts more changes in beta-cell compared to alpha-cell transcriptome**
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6407777/
+
+The sequencing data is available from ENA:
+https://www.ebi.ac.uk/ena/browser/view/PRJEB30761
+
+Only beta-cell samples were used in my analysis.
+
+Mice were fed for 16 weeks with either low-fat diet (10% fat) or high-fat diet (60% fat) and then euthanized for cell collection. These mice were transgenic for Venus and Cherry fluorochromes under Glu and Ins promoters respectively. FACS was used to separate beta-cells and alpha-cells to use for sequencing. 
+
+mRNA was isolated using PolyA capture. RNAseq libraries were generated using Illumina TruSeq v2, which is an unstranded protocol. These libraries were sequenced on an Illumina HiSeq2000 to produce 49bp paired-end reads.
+
+The GRCm39 mouse genome assembly was used as the reference genome. The Refseq fasta genome file and gtf annotation file were obtained from NCBI:
+https://www.ncbi.nlm.nih.gov/assembly/GCF_000001635.27
+
+The genome was indexed using STAR aligner, with and sjdbOverhang of 99. In hindsight, the sjdbOverhang could have been set to 48 since the reads are 49bp. However, this should not affect any results.
+
+The paired-end reads were mapped to the genome using STAR aligner.
+
+I inspected the sequence quality of fastq file using FastQC, and I inspected alignment quality using MultiQC. The fastq files did not show issues for most of the FastQC quality metrics. However, every file showed a concerning amount of sequence duplication levels and overrepresented sequences. LFD samples generally showed greater sequence duplication levels and overrepresented sequences than HFD samples, with LFD1 clearly displaying the most out of any sample. A BLAST query with the overrepresented sequences reported for LFD_1 and HFD_1 reveals matches for a variety of bacterial 16S RNA. The list of BLAST results for each sample is found in the /BLAST_alignment folder. 
+
+MultiQC revealed that only around 45-65% of reads were aligned in most samples. LFD1 only had 27.5%  of reads aligned. Nearly all of the unmapped reads were not mapped due to being too short. This suggest that the bacterial contamination compromises a large proportion of reads in each sample. Given that more than 5 million reads were still mapped for each sample, the data still seemed fit for analysis. However, I these findings made me concerned about potential bias resulting from the large proportion of read contamination in each sample. This bias could be exacerbated given that HFD had a greater number of mapped reads compared to LFD samples. LFD1 appeared to be a particularly problematic sample given only 27.5% of reads were mapped. I included the sample in later QC analysis to make a decision on whether to include it for data analysis.
+
+![](C:/Users/hamal/OneDrive/Documents/ANGSD/Project/images/star_alignment_plot.jpeg)
+
+Read distribution and gene body coverage were inspected using RSeQC. Reads were distributed almost exclusively to exons. 
+
+![](C:/Users/hamal/OneDrive/Documents/ANGSD/Project/images/rseqc_tag_locations.jpg)
+
+Inspection of gene body distributions showed that the LFD samples present a greater 3' bias in gene body distributions. This unfortunately could imply greater mRNA degradation in LFD samples, which could be an additional source of bias. Some samples also displayed paired similarities in gene body coverage, suggesting there might be some batch effects from library preparation or sequencing.
+
+![](C:/Users/hamal/OneDrive/Documents/ANGSD/Project/Project_Files/rseqc_reports/group.geneBodyCoverage.curves.jpg)
+
+To find scripts for all of the mentioned QC tools, see "Sequence Alignment and QC.rmd".
+
+Gene counts were generated using featureCounts. Gene IDs were mapped to paired-end alignments. Minimum overlap was left at a default value of 1 bp.
+
+```{}
+featureCounts -a GRCm39.gtf \
+-o project_featureCounts.txt \
+-t exon \
+-g gene_id \
+-p \
+--countReadPairs \
+-T 4 \
+${path_array[@]};
+```
+
+Initially, featureCounts was run without sample LFD1 due to its low proportion of mapping reads. I later ran featureCounts including all samples so that I could determine whether the sample clusters with other LFD samples based on principal component analysis of counts data. The PCA (see Results section) demonstrated that LFD1 clustered closely with other LFD samples. This finding led me to cautiously include the LFD1 sample in downstream analysis.
+
+Analysis of gene expression was all conducted using the DESeq2 package (1.38.3).
+
+## Discussion
+
+I was unable to definitively support the hypothesis that beta-cells lose identity markers in response to high-fat diet induced hyperglycemia. There are a number of limitations with this dataset that may have prevented me from confirming this well-supported phenomenon. 
+
+The high-fat diet experimental group may not have been hyperglycemic enough to induce dedifferentiation in beta cells. The authors of the study indicate that the HFD mice had a mean HbA1c of 4.87 after the 16-week course of high-fat diet, compared to a mean HbA1c of of 3.70 for LFD mice. HbA1c is a biomarker for long-term blood sugar levels and is used to measure diabetic phenotype. A lot of literature documenting beta-cell dedifferentiation is in the context of extreme hyperglycemia, akin to diabetes. The Jackson Labratory indicates that its diabetic disease mouse models have HbA1c levels ranging from 6.4 to 13.1 [5]. To better observe effects of dedifferentiation, using data from diabetic mouse models such as db/db or mice with an extended HFD feeding-course would be preferable.
+
+Another potential limitation is the method in which beta-cells were sorted. Only beta-cells that expressed strong Venus fluorophore under the Ins2 promoter were selected. This limits the analysis to cells with strongly active Ins2 promoters, which might not be the case for dysregulated beta-cells undergoing dedifferentiation. 
+
+Biases in sequencing data from low proportions of mapped reads could have affected the measurement of specific markers. This could be especially true for pancreatic progenitor cell transcription factors, which I expect to be already lowly expressed.
+
+Despite these limitations, this analysis could still represent a snapshot of the ways beta-cell identity is altered/unaltered in a pre-diabetic hyperglycemic state.
+
+## Datasets
+
+**featureCounts Matrix**  
+Type: File  
+Location: ANGSD_Project (main directory)  
+File Name: project_featureCounts.txt
+
+**DESeq2 Dataset**  
+Type: Rdata  
+Location: /R/Final Report.rmd AND /R/DGE Analysis.rmd  
+Variable Name: deseq.ds
+
+**DESeq2 Results**  
+Type: Rdata  
+Location: /R/Final Report.rmd AND /R/DGE Analysis.rmd  
+Variable Name: dge.results
+
+**Gene Ontology Terms**  
+Type: Rdata  
+Location: /R/Final Report.rmd AND /R/DGE Analysis.rmd  
+Variable Name: go.results
+
+**Significant Biological Process Gene Ontology Terms**  
+Type: Rdata  
+Location: /R/Final Report.rmd AND /R/DGE Analysis.rmd  
+Variable Name: sig.GOs.BP
+
+## Citations
+1. Cerf ME. Beta cell dysfunction and insulin resistance. Front Endocrinol (Lausanne). 2013 Mar 27;4:37. doi:     10.3389/fendo.2013.00037. PMID: 23542897; PMCID: PMC3608918.
+
+2. Swisa A, Glaser B, Dor Y. Metabolic Stress and Compromised Identity of Pancreatic Beta Cells. Front Genet.     2017 Feb 21;8:21. doi: 10.3389/fgene.2017.00021. PMID: 28270834; PMCID: PMC5318414.
+
+3. Dassaye R, Naidoo S, Cerf ME. Transcription factor regulation of pancreatic organogenesis, differentiation     and maturation. Islets. 2016;8(1):13-34. doi: 10.1080/19382014.2015.1075687. Epub 2015 Sep 24. PMID:         26404721; PMCID: PMC4878272.
+
+4. Dusaulcy R, Handgraaf S, Visentin F, Howald C, Dermitzakis ET, Philippe J, Gosmain Y. High-fat diet             impacts more changes in beta-cell compared to alpha-cell transcriptome. PLoS One. 2019 Mar                   8;14(3):e0213299. doi: 10.1371/journal.pone.0213299. PMID: 30849121; PMCID: PMC6407777.
+
+5. The Jackson Laboratory. Phenotype comparisons for top metabolic models.                                         (https://www.jax.org/jax-mice-and-services/solutions-by-therapeutic-area/metabolic-diseases/featured-mi       ce-for-type-2-and-obesity/comparing-metabolic-disease-models)

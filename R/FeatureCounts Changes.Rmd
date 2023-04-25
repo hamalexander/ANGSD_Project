@@ -1,0 +1,168 @@
+---
+title: "FeatureCounts Changes"
+author: "Alexander Ham"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+I made the following changes to my featureCounts script to include the LFD1 sample that I initially excluded from analysis. This is so I can include this sample in the previously examined QC metrics in R. Based off of these new results with the included sample, I will determine whether to include it in my analysis. 
+
+I also exlcuded the -O flag from featureCounts so that reads are not assigned to overlapping meta-features.
+
+```{}
+
+#!/bin/bash -l
+
+#SBATCH --partition=angsd_class
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --job-name=run_featurecounts
+#SBATCH --time=02:00:00
+#SBATCH --mem=8G
+
+mamba activate angsd
+
+path_array=()
+
+for dir in ERR*/; do
+        filename=$(find ${dir} -maxdepth 1 -name "*.bam" -print -quit | xargs basename);
+        path=${dir}${filename};
+        path_array+=($path);
+done
+
+featureCounts -a GRCm39.gtf \
+-o project_featureCounts.txt \
+-t exon \
+-g gene_id \
+-p \
+--countReadPairs \
+-T 4 \
+${path_array[@]};
+
+exit
+```
+
+Next I performed the same QC analysis using this new featureCounts data. 
+
+```{r, include=FALSE}
+library(tidyr)
+library(DESeq2)
+library(tidyverse)
+library(RColorBrewer)
+library(pheatmap)
+```
+
+```{r}
+#load in featureCounts summary table
+rc.summary <- read.table("C:/Users/hamal/OneDrive/Documents/ANGSD/Project/Project_Files/project_featureCounts.txt.summary", header = TRUE)
+
+#rename samples to condition + replicate # (eg HFD1)
+colnames(rc.summary) <- sapply(colnames(rc.summary), function(x) gsub(".*(LFD|HFD)([0-9]+).*", "\\1\\2", x))
+
+#order columns alphabetically
+rc.summary <- rc.summary[, c(1, order(names(rc.summary)[-1]) + 1)]
+```
+
+```{r}
+#delete rows with 0 values in each dataframe
+rc.summary <- rc.summary[rc.summary$HFD1 != 0, ]
+
+#change dataframes to long format
+rc.summary <- rc.summary %>%
+  pivot_longer(cols = names(rc.summary)[-1], names_to = "Sample", values_to = "Reads")
+
+```
+
+Here is the assignment status for each sample. As expected, the most contaminated LFD1 sample has by far the least assigned reads. 
+```{r}
+plot.rc.summary <- ggplot(rc.summary, aes(x = Sample, y = Reads, fill = Status)) + geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Sample", y = "Reads", fill = "Status") +
+  theme_classic() + coord_flip() + ggtitle("Mapping Status for Read Counts")
+
+plot.rc.summary
+
+```
+
+```{r}
+#read in featureCounts data
+rc.data <- read.table("C:/Users/hamal/OneDrive/Documents/ANGSD/Project/Project_Files/project_featureCounts.txt", header = TRUE)
+
+names(rc.data)[7:14] <- sapply(names(rc.data[7:14]), function(x) gsub(".*(LFD|HFD)([0-9]).*", "\\1\\2", x))
+```
+
+```{r}
+#make Geneids into row names
+row.names(rc.data) <- make.names(rc.data$Geneid)
+
+#exclude columns without read counts
+rc.data <- rc.data[ , -c(1:6)]
+
+#create colData dataframe
+sample_info <- data.frame(condition = gsub("[0-9]", "", names(rc.data)), 
+                          row.names = names(rc.data))
+
+#create DESeq object
+deseq.ds <- DESeqDataSetFromMatrix(countData = as.matrix(rc.data),
+                                   colData = sample_info,
+                                   design = ~ condition)
+```
+
+```{r}
+#remove genes with no reads
+keep_genes <- rowSums(counts(deseq.ds)) > 0
+deseq.ds <- deseq.ds[keep_genes, ]
+
+#put samples in alphabetical order
+deseq.ds <- deseq.ds[,sort(colnames(deseq.ds))]
+```
+
+```{r}
+#calculate size factors
+deseq.ds <- estimateSizeFactors(deseq.ds)
+
+#save DESeq object
+saveRDS(deseq.ds, "deseq.ds.rds")
+```
+
+```{r}
+#view effect of size factor normalization on counts
+boxplot(log2(counts(deseq.ds) +1), notch=TRUE,
+        main = "Non-normalized read counts",
+        ylab = "log2(read counts)", cex = 0.6)
+boxplot(log2(counts(deseq.ds, normalized = TRUE) + 1), notch=TRUE,
+        main = "Normalized read counts",
+        ylab = "log2(read counts)", cex = 0.6)
+
+```
+
+```{r}
+plotCounts(deseq.ds, 'Ins2')
+plotCounts(deseq.ds, 'Gcg')
+```
+
+```{r}
+#apply rlog normalization
+dds.rlg <- rlog(deseq.ds, blind=FALSE) 
+```
+
+```{r}
+#get sample-sample distances
+sampleDists <- dist(t(assay(dds.rlg)))
+
+#construct heatmap of sample-sample distances
+sampleDistMatrix <- as.matrix(sampleDists)
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+```
+
+The heatmap and PCA plot both show that LFD1 clusters very closely with other LFD1 samples. Therefore, I decided to include the sample in future analysis.
+```{r}
+pca <- plotPCA(dds.rlg, intgroup=c("condition"))
+pca + geom_text(aes(label = name), nudge_y = 0.8) + geom_point(size = 3)
+```
+

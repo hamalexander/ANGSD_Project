@@ -1,0 +1,170 @@
+---
+title: "Differential Gene Expression Analysis"
+author: "Alexander Ham"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r, include = FALSE}
+library(DESeq2)
+library(magrittr)
+library(goseq)
+library(vsn)
+library(pheatmap)
+```
+
+Loaded in size factor normalized DESeq object generated from "FeatureCounts Changes.rmd"
+```{r}
+setwd("C:/Users/hamal/OneDrive/Documents/ANGSD/Project")
+deseq.ds <- readRDS("deseq.ds.rds")
+```
+
+
+```{r}
+#reorder conditions to LFD, HFD
+deseq.ds$condition %<>% relevel(ref="LFD")
+```
+
+I generated dispersion estimates and Wald statistics for the DESeq object. Size factor normalization was already done previously. 
+```{r}
+deseq.ds %<>% estimateDispersions()
+deseq.ds %<>% nbinomWaldTest()
+```
+
+I generated the differential gene expression results based on FDR correction with independent filtering and an adjusted significance level of 0.05
+```{r}
+dge.results <- results(deseq.ds, independentFiltering = TRUE, alpha = 0.05)
+summary(dge.results)
+```
+
+There are 3604 differentially expressed genes between conditions
+```{r}
+table(dge.results$padj < 0.05)
+```
+
+The MA plot shows that there is a fairly even distribution between positive and negative fold changes. We also see that we filtered out many genes with high fold changes but low mean counts.
+```{r}
+plotMA(dge.results, alpha=0.05, main="Proportion of Significant DEGs with Adusted p-value < 0.05", ylim = c(-6,6))
+```
+
+```{r, include = FALSE}
+library(EnhancedVolcano)
+```
+
+The volcano plot also demonstrates an even distribution of upregulated and downregulated genes, with a collection of high FC, low p-value genes in either group.
+```{r, fig.height=8}
+EnhancedVolcano(dge.results, lab=rownames(dge.results), x='log2FoldChange', y='padj',
+                pCutoff=0.05, title="LFD vs HFD Gene Expression", ylim = c(0,40))
+```
+
+Next I examine GO term enrichment to get an overview of transcriptional differences between conditions.  
+```{r}
+#create vector of DE genes
+dge.genes <- rownames(subset(dge.results, padj < 0.05))
+
+#construct named vector of 0 (not DE) and 1 (DE)
+gene.vector <- row.names(dge.results) %in% dge.genes %>% as.integer
+names(gene.vector) <- row.names(dge.results)
+```
+
+I used the TxDb.Mmusculus.UCSC.mm39.refGene package for gene annotations. I had to first convert the gene IDs from gene symbols into Entrez IDs, since that is what the UCSC annotations use.
+```{r, include=FALSE}
+#BiocManager::install("TxDb.Mmusculus.UCSC.mm39.refGene")
+library(org.Mm.eg.db)
+```
+
+
+```{r}
+#convert DEG vector from gene symbols to Entrez Ids
+names(gene.vector) <- mapIds(org.Mm.eg.db, keys=names(gene.vector), keytype="SYMBOL", column="ENTREZID")
+#remove values with missing names
+gene.vector <- gene.vector[!is.na(names(gene.vector))]
+
+#calculate probability weighting function for use in GO analysis
+pwf <- nullp(gene.vector, "mm39", "refGene")
+```
+
+```{r}
+#generate GO term enrichment
+go.results <- goseq(pwf, "mm39", "refGene")
+head(go.results)
+```
+I generated a list of GO biological processes with over_represented_pvalue < 0.001 for visualization in in REVIGO. I am interested in biological processes since I want to observe whether HFD is associated with dysfunctional beta-cells.
+```{r}
+sig.GOs.BP <- subset(go.results, over_represented_pvalue < 0.001 & ontology == "BP")
+sig.BP.list <- sig.GOs.BP[,1]
+sig.BP.scores <- setNames(-log10(sig.GOs.BP$over_represented_pvalue), sig.BP.list)
+```
+
+```{r, include=FALSE}
+library(rrvgo)
+```
+
+```{r}
+#generate similarity matrix for GO terms
+simMatrix <- calculateSimMatrix(sig.BP.list, orgdb = "org.Mm.eg.db", ont = "BP", method="Rel")
+#reduce terms based on similarity
+reducedTerms <- reduceSimMatrix(simMatrix, sig.BP.scores, threshold=0.7, orgdb="org.Mm.eg.db")
+```
+The tree map of differentially expressed biological processes seem indicative of hyperglycemic stress that beta cells experience from HFD. The greatest changes are seen in protein localization, which in the context of beta-cells probably has to do with insulin localization and secretion. There also seem to be major changes in cell division, as seen by the categories mitotic sister chromatid segregation, cell cycle, and cell division. There also seem to be major differences in metabolism between the two conditions.
+```{r}
+treemapPlot(reducedTerms)
+```
+
+Next I examine the hypothesis that HFD beta-cells have reduced expression of beta-cell identity markers. 
+
+While it is functional protein that likely is expressed downstream of other essential beta-cell transcription factors, I examine insulin expression under each condition. I expect reduced expression of insulin under HFD, since these mice are hyperglycemic, indicating a degree of beta-cell dysfunction. The results indicate that both Ins2 and Ins1 are reduced under HFD, but are not statistically significant.
+```{r}
+Ins2_results <- dge.results["Ins2",]
+print(Ins2_results)
+Ins1_results <- dge.results["Ins1",]
+print(Ins1_results)
+```
+
+To test whether loss of beta-cell identity occurs under HFD, I assembled a list of beta-cell identity markers from [Swisa 2017, Metabolic Stress and Compromised Identity of Pancreatic Beta Cells]. This list is comprised of the transcription factors Pdx1, MafA, NeuroD1, Nkx6.1, FoxO1, Pax6, and Nkx2.2. The results indicate that that only Nkx6.1 and MafA have statistically significant differences, where MafA is downregulated and Nkx6.1 is upregulated in HFD mice.  
+```{r}
+beta.identity.genes <- c("Pdx1", "Mafa", "Neurod1", "Nkx6.1", "Foxo1", "Pax6", "Nkx2.2")
+
+#rlog normalize the counts data
+deseq.counts <- counts(deseq.ds)
+deseq.counts.rlg <- rlog(deseq.counts, blind=FALSE)
+#get rlog normalized counts data for beta-cell identity genes
+beta.identity.rlg <- deseq.counts.rlg[beta.identity.genes,]
+#create heatmap
+pheatmap(beta.identity.rlg, scale = "row", main = "Beta-cell Identity Markers", cluster_cols = FALSE)
+
+#DESeq results of beta-cell identity genes
+results.beta.identity <- subset(dge.results, rownames(dge.results) %in% beta.identity.genes) %>%   as.data.frame()
+
+results.beta.identity
+```
+
+Next I examined endocrine progenitor cell markers to test for beta-cell dedifferentiation. Markers for endocrine progenitor cells were identified from [Dassaye 2016, Transcription factor regulation of pancreatic organogenesis, differentiation and maturation]. There does not appear to be any major difference in expression of these markers between groups.
+```{r}
+prog.identity.genes <- c("Isl1", "Rfx6", "Gata6", "Neurog3")
+#get rlog normalized counts data for progenitor identity genes
+prog.identity.rlg <- deseq.counts.rlg[prog.identity.genes,]
+#create heatmap
+pheatmap(prog.identity.rlg, scale = "row", main = "Endocrine Progenitor Identity Markers", cluster_cols = FALSE)
+
+#DESeq results of progenitor identity genes
+results.prog.identity <- subset(dge.results, rownames(dge.results) %in% prog.identity.genes) %>% as.data.frame()
+
+results.prog.identity
+```
+
+Finally I examine alpha-cell identity markers to test for transdifferentiation between beta-cells and alpha-cells. Markers for alpha cells were identified from [Dassaye 2016, Transcription factor regulation of pancreatic organogenesis, differentiation and maturation]. There is no difference in expression of the alpha-cell transcription factors Arx and MafB. However, Glucagon is significantly upregulated in LFD beta-cells.
+```{r}
+alpha.identity.genes <- c("Arx", "Mafb", "Gcg")
+#get rlog normalized counts data for progenitor identity genes
+alpha.identity.rlg <- deseq.counts.rlg[alpha.identity.genes,]
+#create heatmap
+pheatmap(alpha.identity.rlg, scale = "row", main = "Alpha Cell Identity Markers", cluster_cols = FALSE)
+
+#DESeq results of progenitor identity genes
+results.alpha.identity <- subset(dge.results, rownames(dge.results) %in% alpha.identity.genes) %>% as.data.frame()
+
+results.alpha.identity
+
+```
+
